@@ -12,19 +12,26 @@ date: '2022-06-11'
 #renv::snapshot()
 ```
 
-```{r, eval=FALSE, include=FALSE}
-# Initialize renv and install packages
-install.packages("renv")
-renv::restore()
-```
+
 
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+# Machine learning instead of traditional statistics
 
-# Set up code 
+We will explore the difference in results using LASSO and using XGBoost. In XGBoost, we will use permutation feature importance to understand the contribution of the features (independent variables) to the model.
+
+You can download the code [here](https://github.com/jgarciab/ml_julius) to run it on your computer.
+
+### Set up libraries 
+
+```{r, eval=FALSE, include=FALSE}
+# Initialize renv and install packages
+install.packages("renv")
+renv::restore()
+```
 
 ```{r, results = "hide", message=FALSE, warning=FALSE}
 library(tidyverse) # Data manipulation
@@ -70,7 +77,7 @@ create_data <- function(order, n_features = 100, n_obs = 1000) {
 ```
 
 
-# Create data
+## Create data
 ```{r}
 # Create the data using a third-order interaction
 data <- create_data(3, n_features = 100, n_obs = 1000)
@@ -88,9 +95,9 @@ DT::datatable(round(head(data),3),
                              dom = "t"))
 ```
 
-# Method 1: Penalized regression (LASSO)
+## Method 1: Penalized regression (LASSO)
 
-## Hyperparameter tuning using cross-validation (glmnet package)
+### Hyperparameter tuning using cross-validation (glmnet package)
 
 We want to have a balance between flexibility and overfitting. In LASSO regression this is achieved by forcing the absolute sum of coeficients to be lower than a value. This is achieved with the parameter $\lambda$ (Higher $\lambda$ equals lower sum of coeficients)
 ```{r}
@@ -108,7 +115,7 @@ coefs[which(coefs!=0)]
 
 ```
 
-## Hyperparameter tuning using cross-validation (caret package)
+### Hyperparameter tuning using cross-validation (caret package)
 
 ```{r}
 # Repeat 10 times the 5-fold cross validations
@@ -139,9 +146,9 @@ coefs[which(coefs!=0)]
 ```
 
 
-# Method 2: XGBoost 
+## Method 2: XGBoost 
 
-## Prevent overfitting: Hyperparameter tuning
+### Prevent overfitting: Hyperparameter tuning caret
 
 XGBoost has many different paramters, including the number of number of trees (nrounds), depth of trees (max_depth), minimum reduction in the loss to make a further partition (gamma), fraction of samples used to train the tree (subsample), the fraction of features (randomly selected) that will be used to train each tree (colsample_bytree).
 
@@ -173,7 +180,7 @@ mod_xgb <- caret::train(x = x_data, y = y_data,
 mod_xgb
 ```
 
-## Interpretability: Permutation importance
+### Interpretability: Permutation importance
 
 We want to understand which variables are considered more important by XGBoost to create the models. We will use permutation imporance, where each feature is permuted (k times) and the reduction in prediction error is.
 
@@ -202,7 +209,7 @@ new$results <- head(new$results, 20)
 plot(new)
 ```
 
-## Show everything except the first (which should be cat1)
+#### Show everything except the first (which should be cat1)
 
 ```{r}
 # show only the top 20 variables (out of 100 features)
@@ -211,7 +218,8 @@ new$results <- tail(new$results, 19)
 # Plot
 plot(new)
 ```
-# Clean up
+
+## Clean up
 
 ```{r}
 # stop the process cluster
