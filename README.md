@@ -4,4 +4,4 @@ Using machine learning instead of traditional statistics; overfitting and interp
 - Slides: Presentation 
 - Code: Exercise
 
-Go to [javier.science/ml_julius]([javier.science/ml_julius) to see the code
+Go to [https://javier.science/ml_julius](https://javier.science/ml_julius) to see the code
