@@ -1,0 +1,223 @@
+---
+title: "Machine learning in epidemiology"
+author: "Javier Garcia-Bernardo"
+output: html_document
+date: '2022-06-11'
+---
+
+```{r, eval=FALSE, include=FALSE}
+#Create renv with the required libraries
+#renv::init(bare = TRUE)
+#install.packages(c("DT","tidyverse","caret","iml","doParallel","xgboost"))
+#renv::snapshot()
+```
+
+```{r, eval=FALSE, include=FALSE}
+# Initialize renv and install packages
+install.packages("renv")
+renv::restore()
+```
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# Set up code 
+
+```{r, results = "hide", message=FALSE, warning=FALSE}
+library(tidyverse) # Data manipulation
+library(DT) # Print nice tables
+library(caret) # Machine learning
+library(glmnet) # LASSO
+library(iml) # Interpretable AI
+library(doParallel) # Run code in parrenallel
+
+# Create the cluster (disable if this doesn't work on your computer). Make sure to run the last cell of this notebook at the end of the practical to stop the cluster!
+cl <- makePSOCKcluster(5)
+registerDoParallel(cl)
+```
+
+
+```{r data}
+create_data <- function(order, n_features = 100, n_obs = 1000) {
+  # Set seed for replicability
+  set.seed(0)
+  
+  # Create data: 100 features, mean = 3, sd = 1
+  data <- matrix(3+rnorm(n_features*n_obs, 0, 1), ncol = n_features)
+  
+  # Convert to tibble
+  colnames(data) <- paste0("V", 1:n_features)
+  data <- as_tibble(data)
+  
+  # Add a few categorical variable
+  data$cat1 <- sample(0:1, n_obs, replace = TRUE)
+  data$cat2 <- sample(0:1, n_obs, replace = TRUE)
+  data$cat3 <- sample(0:1, n_obs, replace = TRUE)
+  data$cat4 <- sample(0:1, n_obs, replace = TRUE)
+  data$cat5 <- sample(0:1, n_obs, replace = TRUE)
+  
+  # Create the response, which is the product of the first "order" features if cat1 == 0, and -1*product if cat1 == 1. Some noise is added
+  # After running the code, you can modify this
+  values <- pmap_dbl(data[, 1:order], prod)# data$V1*data$V2*data$V3...
+  
+  data$y <- 1*(data$cat1==0)*values  - 1*(data$cat1==1)*values + rnorm(n_obs, 0, 1)/10 
+  
+  return(data)
+}
+```
+
+
+# Create data
+```{r}
+# Create the data using a third-order interaction
+data <- create_data(3, n_features = 100, n_obs = 1000)
+# Independent variables
+x_data <- as.matrix(data %>% dplyr::select(-y))
+# dependent variable
+y_data <- data$y
+```
+
+```{r, echo=FALSE}
+DT::datatable(round(head(data),3),
+              options = list(scrollX = TRUE,
+                             scrollX = FALSE,
+                             paging = FALSE,
+                             dom = "t"))
+```
+
+# Method 1: Penalized regression (LASSO)
+
+## Hyperparameter tuning using cross-validation (glmnet package)
+
+We want to have a balance between flexibility and overfitting. In LASSO regression this is achieved by forcing the absolute sum of coeficients to be lower than a value. This is achieved with the parameter $\lambda$ (Higher $\lambda$ equals lower sum of coeficients)
+```{r}
+# Find best regularization using cross-validation
+# alpha = 1 --> LASSO. alpha = 0 --> Ridge
+cvfit <- cv.glmnet(x = x_data, y = y_data, alpha = 1)
+
+# x axis = lambda, y axis = error; top numbers = number of variables included in the model
+plot(cvfit)
+
+# The best regularization (s="lambda.min")
+coefs <- coef(cvfit, s = "lambda.min")
+rownames(coefs)[coefs[,1]!= 0] 
+coefs[which(coefs!=0)]
+
+```
+
+## Hyperparameter tuning using cross-validation (caret package)
+
+```{r}
+# Repeat 10 times the 5-fold cross validations
+trctrl <- trainControl(method = "repeatedcv", number = 5, repeats = 10)
+
+# Parameters to test (lambda = regularization parameter, LASSO (alpha = 1))
+tune_grid <- expand.grid(lambda   = c(0, 0.0001, 0.001, 0.01, 0.05, 0.1, 1),
+                         alpha = c(1))
+
+# Test parameters using cross-validatoin
+mod_glm <- caret::train(x = x_data, y = y_data, 
+                method = "glmnet",
+                metric = "RMSE",
+                trControl=trctrl,
+                tuneGrid = tune_grid,
+                tuneLength = 10,
+                verbosity = 0)
+
+# Show the model
+mod_glm
+```
+
+```{r}
+# Print the coefficients of the best model
+coefs <- coef(mod_glm$finalModel, mod_glm$bestTune$lambda)
+rownames(coefs)[coefs[,1]!= 0] 
+coefs[which(coefs!=0)]
+```
+
+
+# Method 2: XGBoost 
+
+## Prevent overfitting: Hyperparameter tuning
+
+XGBoost has many different paramters, including the number of number of trees (nrounds), depth of trees (max_depth), minimum reduction in the loss to make a further partition (gamma), fraction of samples used to train the tree (subsample), the fraction of features (randomly selected) that will be used to train each tree (colsample_bytree).
+
+We will use CV to find the best ensampble for our application.
+
+Note that this takes a lot longer than in LASSO regression (mainly because we have many combinations of parameters to test)
+```{r}
+# Training using cross-validation (5-fold)
+trctrl <- trainControl(method = "repeatedcv", number = 5, repeats = 5)
+
+# Parameters to test (XGBoosting has a lot of things you can tweak)
+tune_grid <- expand.grid(nrounds=c(10,30,100,200), 
+                         max_depth = c(3:6),
+                         eta = c(0.05),
+                         gamma = c(0.01),
+                         colsample_bytree = c(0.5), 
+                         subsample = c(0.5), 
+                         min_child_weight = c(0))
+
+# Test parameters using cross-validatoin
+mod_xgb <- caret::train(x = x_data, y = y_data, 
+                method = "xgbTree",
+                trControl=trctrl,
+                tuneGrid = tune_grid,
+                tuneLength = 10,
+                verbosity = 0)
+
+# Show the model
+mod_xgb
+```
+
+## Interpretability: Permutation importance
+
+We want to understand which variables are considered more important by XGBoost to create the models. We will use permutation imporance, where each feature is permuted (k times) and the reduction in prediction error is.
+
+Note: Ideally you want to do this in a different dataset. This can be done for example by dividing your original dataset in two parts, the training dataset (used for hyperparameter tuning), and a test dataset (used to evaluate feature importance).
+
+```{r}
+# Create predictor to interpret
+mod <- Predictor$new(mod_xgb, 
+                     data = as_tibble(x_data), 
+                     y = y_data,
+                     predict.function = predict)
+
+# Calculate permutation importance, plot the ratio of new_error/original_error
+new <- FeatureImp$new(
+  mod,
+  loss = "rmse",
+  compare = "ratio",
+  n.repetitions = 20,
+  features = NULL #all features
+)
+
+# show only the top 20 variables (out of 100 features)
+new$results <- head(new$results, 20)
+
+# Plot
+plot(new)
+```
+
+## Show everything except the first (which should be cat1)
+
+```{r}
+# show only the top 20 variables (out of 100 features)
+new$results <- tail(new$results, 19)
+
+# Plot
+plot(new)
+```
+# Clean up
+
+```{r}
+# stop the process cluster
+stopCluster(cl)
+```
+
+
+
+
