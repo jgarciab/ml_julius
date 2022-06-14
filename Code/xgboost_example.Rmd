@@ -243,7 +243,7 @@ xgboost::xgb.importance(model = mod_xgb$finalModel)
 More info: https://christophm.github.io/interpretable-ml-book/shap.html
 
 ```{r}
-xgboost::xgb.plot.shap.summary(x_data, model = mod_xgb$finalModel)  +  theme_minimal()
+xgboost::xgb.plot.shap.summary(x_data, model = mod_xgb$finalModel)  + theme_minimal()
 ```
 
 
