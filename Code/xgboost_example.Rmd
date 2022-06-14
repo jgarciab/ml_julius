@@ -117,6 +117,9 @@ coefs[which(coefs!=0)]
 
 ### Hyperparameter tuning using cross-validation (caret package)
 
+- We create a data.frame with all combinations of parameters to test (lambda and alpha in this case)
+
+
 ```{r}
 # Repeat 10 times the 5-fold cross validations
 trctrl <- trainControl(method = "repeatedcv", number = 5, repeats = 10)
@@ -155,6 +158,7 @@ XGBoost has many different paramters, including the number of number of trees (n
 We will use CV to find the best ensampble for our application.
 
 Note that this takes a lot longer than in LASSO regression (mainly because we have many combinations of parameters to test)
+
 ```{r}
 # Training using cross-validation (5-fold)
 trctrl <- trainControl(method = "repeatedcv", number = 5, repeats = 5)
@@ -218,6 +222,31 @@ new$results <- tail(new$results, 19)
 # Plot
 plot(new)
 ```
+
+### Interpretability: Feature importance using the trees
+
+- We can use the information encoded in our ensemble to assess feature importance:
+  - Gain --> Performance increase when variable is included 
+  - Cover --> How many observations are under the split of this feature
+  - Frequency --> How often the variable is included in the model
+
+```{r}
+# Feature importance using xgboost
+xgboost::xgb.importance(model = mod_xgb$finalModel)
+```
+
+### Interpretability: SHAP values
+
+- SHAP value shows how important each feature is for the prediction of an observation
+- The summary plot shows the SHAP value depending on the value of the feature
+
+More info: https://christophm.github.io/interpretable-ml-book/shap.html
+
+```{r}
+xgboost::xgb.plot.shap.summary(x_data, model = mod_xgb$finalModel)  +  theme_minimal()
+```
+
+
 
 ## Clean up
 
